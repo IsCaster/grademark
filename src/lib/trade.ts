@@ -19,7 +19,6 @@ export interface ITimestampedValue {
  * Interface that defines a trade.
  */
 export interface ITrade {
-
     /**
      * The direction of the trade.
      * Long or short.
@@ -75,7 +74,9 @@ export interface ITrade {
      * The series of risk% recorded over the holding period of the trade (if recording of this is enabled).
      */
     riskSeries?: ITimestampedValue[];
-    
+
+    rateOfReturnSeries?: ITimestampedValue[];
+
     /**
      * Number of bars the position was held for.
      */
@@ -100,5 +101,4 @@ export interface ITrade {
      * Price where profit target exit is triggered.
      */
     profitTarget?: number;
-
 }

@@ -1,0 +1,12 @@
+{
+    "tabWidth": 4,
+    "printWidth": 200,
+    "overrides": [
+        {
+            "files": "tsconfig.json",
+            "options": {
+                "tabWidth": 2
+            }
+        }
+    ]
+}

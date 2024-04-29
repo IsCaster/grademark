@@ -5,7 +5,6 @@ import { TradeDirection } from "./strategy";
  * Interface that defines an open position.
  */
 export interface IPosition {
-
     /**
      * The direction of the position.
      * Long or short.
@@ -61,7 +60,9 @@ export interface IPosition {
      * Records the risk series, if enabled.
      */
     riskSeries?: ITimestampedValue[];
-    
+
+    rateOfReturnSeries?: ITimestampedValue[];
+
     /**
      * Number of bars the position was held for.
      */

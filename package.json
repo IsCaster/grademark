@@ -42,6 +42,7 @@
     "dependencies": {
         "CBuffer": "^2.2.0",
         "dayjs": "^1.8.36",
+        "lodash": "^4.17.21",
         "mathjs": "^5.10.3",
         "mersennetwister": "^0.2.3",
         "moment": "^2.28.0",
@@ -53,6 +54,7 @@
     "devDependencies": {
         "@data-forge/serialization": "^1.0.1",
         "@types/chai": "4.1.6",
+        "@types/lodash": "^4.17.0",
         "@types/mathjs": "^4.4.5",
         "@types/mocha": "5.2.5",
         "@types/node": "10.11.4",

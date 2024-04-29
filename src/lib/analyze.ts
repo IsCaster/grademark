@@ -1,14 +1,13 @@
 import { ITrade } from "./trade";
-import * as math from 'mathjs';
+import * as math from "mathjs";
 import { IAnalysis } from "./analysis";
 import { isNumber, isArray } from "./utils";
 import { Series } from "data-forge";
-
+import _ from "lodash";
 /**
  * Analyse a sequence of trades and compute their performance.
  */
-export function analyze(startingCapital: number, trades: ITrade[]): IAnalysis {
-
+export function analyze(startingCapital: number, trades: ITrade[], options?: { startingDate?: Date; endingDate?: Date; orderSize?: number }): IAnalysis {
     if (!isNumber(startingCapital) || startingCapital <= 0) {
         throw new Error("Expected 'startingCapital' argument to 'analyze' to be a positive number that specifies the amount of capital used to simulate trading.");
     }
@@ -17,6 +16,7 @@ export function analyze(startingCapital: number, trades: ITrade[]): IAnalysis {
         throw new Error("Expected 'trades' argument to 'analyze' to be an array that contains a set of trades to be analyzed.");
     }
 
+    let orderSize = options?.orderSize ?? startingCapital;
     let workingCapital = startingCapital;
     let barCount = 0;
     let peakCapital = startingCapital;
@@ -29,20 +29,40 @@ export function analyze(startingCapital: number, trades: ITrade[]): IAnalysis {
     let numLosingTrades = 0;
     let totalTrades = 0;
     let maxRiskPct = undefined;
+    let sharpeRatio = 0;
+    let timeframe = 0;
+    let rateOfReturnList: number[] | null = null;
+
+    if (trades?.[0]?.rateOfReturnSeries?.[0]?.time && trades?.[0]?.rateOfReturnSeries?.[1]?.time) {
+        timeframe = trades[0].rateOfReturnSeries[1].time.getTime() - trades[0].rateOfReturnSeries[0].time.getTime();
+    }
+
+    if (timeframe && options?.startingDate) {
+        if (!options?.endingDate) {
+            options.endingDate = new Date();
+        }
+        const barCountOfDateRange = Math.floor((options.endingDate.getTime() - options.startingDate.getTime()) / timeframe);
+        rateOfReturnList = _.fill(Array(barCountOfDateRange), 0);
+    }
 
     for (const trade of trades) {
         ++totalTrades;
         if (trade.riskPct !== undefined) {
             maxRiskPct = Math.max(trade.riskPct, maxRiskPct || 0);
         }
-        
-        workingCapital *= trade.growth;
+
+        if (rateOfReturnList) {
+            for (const rateOfReturn of trade.rateOfReturnSeries!) {
+                rateOfReturnList[Math.round((rateOfReturn.time.getTime() - options!.startingDate!.getTime()) / timeframe)] = rateOfReturn.value * (orderSize / workingCapital);
+            }
+        }
+
+        workingCapital = workingCapital + orderSize * (trade.growth - 1);
         barCount += trade.holdingPeriod;
 
         if (workingCapital < peakCapital) {
             workingDrawdown = workingCapital - peakCapital;
-        }
-        else {
+        } else {
             peakCapital = workingCapital;
             workingDrawdown = 0; // Reset at the peak.
         }
@@ -50,8 +70,7 @@ export function analyze(startingCapital: number, trades: ITrade[]): IAnalysis {
         if (trade.profit > 0) {
             totalProfits += trade.profit;
             ++numWinningTrades;
-        }
-        else {
+        } else {
             totalLosses += trade.profit;
             ++numLosingTrades;
         }
@@ -60,21 +79,16 @@ export function analyze(startingCapital: number, trades: ITrade[]): IAnalysis {
         maxDrawdownPct = Math.min((maxDrawdown / peakCapital) * 100, maxDrawdownPct);
     }
 
-   const rmultiples = trades
-        .filter(trade => trade.rmultiple !== undefined)
-        .map(trade => trade.rmultiple!);
+    const rmultiples = trades.filter((trade) => trade.rmultiple !== undefined).map((trade) => trade.rmultiple!);
 
     const expectency = rmultiples.length > 0 ? new Series(rmultiples).average() : undefined;
-    const rmultipleStdDev = rmultiples.length > 0
-        ? math.std(rmultiples)
-        : undefined;
-    
+    const rmultipleStdDev = rmultiples.length > 0 ? math.std(rmultiples) : undefined;
+
     let systemQuality: number | undefined;
     if (expectency !== undefined && rmultipleStdDev !== undefined) {
         if (rmultipleStdDev === 0) {
             systemQuality = undefined;
-        }
-        else {
+        } else {
             systemQuality = expectency / rmultipleStdDev;
         }
     }
@@ -84,13 +98,17 @@ export function analyze(startingCapital: number, trades: ITrade[]): IAnalysis {
     if (absTotalLosses > 0) {
         profitFactor = totalProfits / absTotalLosses;
     }
-    
+
     const profit = workingCapital - startingCapital;
     const profitPct = (profit / startingCapital) * 100;
     const proportionWinning = totalTrades > 0 ? numWinningTrades / totalTrades : 0;
     const proportionLosing = totalTrades > 0 ? numLosingTrades / totalTrades : 0;
     const averageWinningTrade = numWinningTrades > 0 ? totalProfits / numWinningTrades : 0;
     const averageLosingTrade = numLosingTrades > 0 ? totalLosses / numLosingTrades : 0;
+    if (rateOfReturnList) {
+        const rateOfReturnSeries = new Series(rmultiples);
+        sharpeRatio = (rateOfReturnSeries.average() / rateOfReturnSeries.std()) * Math.sqrt((365 * 24 * 60 * 60 * 1000) / timeframe);
+    }
     const analysis: IAnalysis = {
         startingCapital: startingCapital,
         finalCapital: workingCapital,
@@ -104,6 +122,7 @@ export function analyze(startingCapital: number, trades: ITrade[]): IAnalysis {
         maxRiskPct: maxRiskPct,
         expectency: expectency,
         rmultipleStdDev: rmultipleStdDev,
+        sharpeRatio,
         systemQuality: systemQuality,
         profitFactor: profitFactor,
         proportionProfitable: proportionWinning,
@@ -114,7 +133,7 @@ export function analyze(startingCapital: number, trades: ITrade[]): IAnalysis {
         numLosingTrades: numLosingTrades,
         averageWinningTrade: averageWinningTrade,
         averageLosingTrade: averageLosingTrade,
-        expectedValue: (proportionWinning * averageWinningTrade) + (proportionLosing * averageLosingTrade),
+        expectedValue: proportionWinning * averageWinningTrade + proportionLosing * averageLosingTrade,
     };
 
     return analysis;

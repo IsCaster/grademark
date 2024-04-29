@@ -51,7 +51,7 @@ export interface IAnalysis {
     maxDrawdownPct: number;
 
     /**
-     * Maximum amount of risk taken at any point relative expressed as a percentage relative to the 
+     * Maximum amount of risk taken at any point relative expressed as a percentage relative to the
      * size of the account at the time.
      * This is optional and only set when a stop loss is applied in the strategy.
      */
@@ -61,20 +61,22 @@ export interface IAnalysis {
     // The estimated or actual expectency of the strategy.
     // P204 Trading your way to financial freedom.
     //
-    expectency?: number,
+    expectency?: number;
 
     //
-    // The standard deviation tells you how much variability you can expect from your system's performance. 
-    // In the sample our standard deviation was 1.86R. 
+    // The standard deviation tells you how much variability you can expect from your system's performance.
+    // In the sample our standard deviation was 1.86R.
     // http://www.actionforex.com/articles-library/money-management-articles/every-trading-system-can-be-described-by-the-r-multiples-it-generates-200604136408/
     //
-    rmultipleStdDev?: number,
-    
+    rmultipleStdDev?: number;
+
+    sharpeRatio?: number;
+
     //
     // The estimated or actual quality of the strategy.
     // Expectency / std devation of rmultiples.
     // Only computed when stop loss is used for a strategy, otherwise set to undefined.
-    // Result is also undefined when there is no deviation in profits from trades 
+    // Result is also undefined when there is no deviation in profits from trades
     // (this might happen if all trades in your backtest are stopped out at the same loss).
     //
     /*
@@ -83,7 +85,7 @@ export interface IAnalysis {
     http://www.actionforex.com/articles-library/money-management-articles/every-trading-system-can-be-described-by-the-r-multiples-it-generates-200604136408/
     */
     systemQuality?: number;
-    
+
     /**
      * The ratio of wins to losses.
      * Values above 2 are outstanding.
@@ -106,7 +108,7 @@ export interface IAnalysis {
     percentProfitable: number;
 
     /**
-     * Ratio of net profit to max drawdown. 
+     * Ratio of net profit to max drawdown.
      * Useful metric for comparing strategies.
      * The higher the better.
      * Similar to the calmar ratio:
@@ -116,7 +118,7 @@ export interface IAnalysis {
 
     /**
      * The average profit per trade.
-     * 
+     *
      * = profit / totalTrades
      */
     averageProfitPerTrade: number;
@@ -147,7 +149,7 @@ export interface IAnalysis {
      * = % winning * avgh win + % losing * avg los
      * Want this number to be positive.
      * Can be used to rank trading strategies. Higher value is better.
-     * 
+     *
      * https://en.wikipedia.org/wiki/Expected_value
      */
     expectedValue: number;
