@@ -106,7 +106,7 @@ export function analyze(startingCapital: number, trades: ITrade[], options?: { s
     const averageWinningTrade = numWinningTrades > 0 ? totalProfits / numWinningTrades : 0;
     const averageLosingTrade = numLosingTrades > 0 ? totalLosses / numLosingTrades : 0;
     if (rateOfReturnList) {
-        const rateOfReturnSeries = new Series(rmultiples);
+        const rateOfReturnSeries = new Series(rateOfReturnList);
         sharpeRatio = (rateOfReturnSeries.average() / rateOfReturnSeries.std()) * Math.sqrt((365 * 24 * 60 * 60 * 1000) / timeframe);
     }
     const analysis: IAnalysis = {

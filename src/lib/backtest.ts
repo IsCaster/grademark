@@ -190,8 +190,18 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
         positionStatus = PositionStatus.None;
     }
 
+    let curPrice: number | null = null;
+    let lastPrice: number | null = null;
+
     for (const bar of indicatorsSeries) {
         lookbackBuffer.push(bar);
+        if (lastPrice === undefined) {
+            lastPrice = bar.open;
+            curPrice = bar.close;
+        } else {
+            lastPrice = curPrice;
+            curPrice = bar.close;
+        }
 
         if (lookbackBuffer.length < lookbackPeriod) {
             continue; // Don't invoke rules until lookback period is satisfied.
@@ -391,17 +401,16 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                     });
                 }
 
-                if (options.recordRateOfReturn) {
-                    const lastBar = lookbackBuffer.get(lookbackBuffer.length - 1);
+                if (options.recordRateOfReturn && lastPrice) {
                     if (openPosition!.direction === TradeDirection.Long) {
                         openPosition!.rateOfReturnSeries!.push({
                             time: bar.time,
-                            value: (bar.close - lastBar.close) / lastBar.close,
+                            value: (curPrice - lastPrice) / lastPrice,
                         });
                     } else {
                         openPosition!.rateOfReturnSeries!.push({
                             time: bar.time,
-                            value: (lastBar.close - bar.close) / lastBar.close,
+                            value: (lastPrice - curPrice) / lastPrice,
                         });
                     }
                 }
