@@ -31,12 +31,13 @@ function updatePosition(position: IPosition, bar: IBar): void {
  * @param exitTime The timestamp for the bar when the position was exited.
  * @param exitPrice The price of the instrument when the position was exited.
  */
-function finalizePosition(position: IPosition, exitTime: Date, exitPrice: number, exitReason: string): ITrade {
+function finalizePosition(position: IPosition, exitTime: Date, exitPrice: number, exitReason: string, fees: number): ITrade {
     const profit = position.direction === TradeDirection.Long ? exitPrice - position.entryPrice : position.entryPrice - exitPrice;
     let rmultiple;
     if (position.initialUnitRisk !== undefined) {
         rmultiple = profit / position.initialUnitRisk;
     }
+    const growth = position.direction === TradeDirection.Long ? exitPrice / position.entryPrice : position.entryPrice / exitPrice;
     return {
         direction: position.direction,
         entryTime: position.entryTime,
@@ -45,7 +46,7 @@ function finalizePosition(position: IPosition, exitTime: Date, exitPrice: number
         exitPrice: exitPrice,
         profit: profit,
         profitPct: (profit / position.entryPrice) * 100,
-        growth: position.direction === TradeDirection.Long ? exitPrice / position.entryPrice : position.entryPrice / exitPrice,
+        growth: growth - growth * fees,
         riskPct: position.initialRiskPct,
         riskSeries: position.riskSeries,
         rateOfReturnSeries: position.rateOfReturnSeries,
@@ -130,6 +131,11 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
     }
 
     //
+    // Sum of maker fee and taker fee.
+    //
+    const fees = (strategy.fees && strategy.fees()) || 0;
+
+    //
     // Tracks trades that have been closed.
     //
     const completedTrades: ITrade[] = [];
@@ -183,7 +189,7 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
     // Close the current open position.
     //
     function closePosition(bar: InputBarT, exitPrice: number, exitReason: string) {
-        const trade = finalizePosition(openPosition!, bar.time, exitPrice, exitReason);
+        const trade = finalizePosition(openPosition!, bar.time, exitPrice, exitReason, fees);
         completedTrades.push(trade!);
         // Reset to no open position;
         openPosition = null;
@@ -441,7 +447,7 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
     if (openPosition) {
         // Finalize open position.
         const lastBar = indicatorsSeries.last();
-        const lastTrade = finalizePosition(openPosition, lastBar.time, lastBar.close, "finalize");
+        const lastTrade = finalizePosition(openPosition, lastBar.time, lastBar.close, "finalize", fees);
         completedTrades.push(lastTrade);
     }
 

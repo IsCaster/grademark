@@ -4,7 +4,7 @@ import { IPosition } from "./position";
 
 /**
  * Specifies which direction we are trading.
- * 
+ *
  * Long:    We'll make a profit if the price of the instrument rises.
  * Short:   We'll make a profit if the price of the instrument falls.
  */
@@ -20,7 +20,7 @@ export interface IEnterPositionOptions {
     /**
      * Determines which direction we are trading.
      * Defaults to "long".
-     * 
+     *
      * Long:    We'll make a profit if the price of the instrument rises.
      * Short:   We'll make a profit if the price of the instrument falls.
      */
@@ -28,10 +28,10 @@ export interface IEnterPositionOptions {
 
     /**
      * The price open a position at.
-     * 
+     *
      * Long:
      *      Position will be opened in the bar after the bar where the high rises through this price.
-     * 
+     *
      * Short:
      *      Position will be opened in the bar after the bar where the low drops through this price.
      */
@@ -54,7 +54,6 @@ export type ExitPositionFn = () => void;
  * General parameters to rule functions.
  */
 export interface IRuleParams<BarT extends IBar, ParametersT> {
-
     /**
      * The most recent bar.
      */
@@ -87,10 +86,15 @@ export interface IOpenPositionRuleArgs<BarT extends IBar, ParametersT> extends I
 }
 
 /**
+ * Computes the fees.
+ * Return the sum of maker fee and taker fee.
+ */
+export type FeesFn = () => number;
+
+/**
  * Arguments to a stop loss rule function.
  */
-export interface IStopLossArgs<BarT extends IBar, ParametersT> extends IOpenPositionRuleArgs<BarT, ParametersT> {
-}
+export interface IStopLossArgs<BarT extends IBar, ParametersT> extends IOpenPositionRuleArgs<BarT, ParametersT> {}
 
 /**
  * Computes the intrabar stop loss.
@@ -101,8 +105,7 @@ export type StopLossFn<BarT extends IBar, ParametersT = any> = (args: IStopLossA
 /**
  * Arguments to a profit target rule function.
  */
-export interface IProfitTargetArgs<BarT extends IBar, ParametersT> extends IOpenPositionRuleArgs<BarT, ParametersT> {
-}
+export interface IProfitTargetArgs<BarT extends IBar, ParametersT> extends IOpenPositionRuleArgs<BarT, ParametersT> {}
 
 /**
  * Computes the intrabar profit target.
@@ -113,8 +116,7 @@ export type ProfitTargetFn<BarT extends IBar, ParametersT = any> = (args: IProfi
 /**
  * Arguments for an entry rule function.
  */
-export interface IEntryRuleArgs<BarT extends IBar, ParametersT> extends IRuleParams<BarT, ParametersT> {
-}
+export interface IEntryRuleArgs<BarT extends IBar, ParametersT> extends IRuleParams<BarT, ParametersT> {}
 
 /**
  * Type for a function that defines an entry rule.
@@ -124,8 +126,7 @@ export type EntryRuleFn<BarT extends IBar, ParametersT = any> = (enterPosition: 
 /**
  * Arguments for an exit rule function.
  */
-export interface IExitRuleArgs<BarT extends IBar, ParametersT> extends IOpenPositionRuleArgs<BarT, ParametersT> {
-}
+export interface IExitRuleArgs<BarT extends IBar, ParametersT> extends IOpenPositionRuleArgs<BarT, ParametersT> {}
 
 /**
  * Type for a function that defines an exit rule.
@@ -143,12 +144,11 @@ export interface IParameterBucket {
  * Arguments to a prep indicators function.
  */
 export interface IPrepIndicatorsArgs<InputBarT extends IBar, ParametersT, IndexT> {
-
     /**
      * Optimizable parameters to the trading strategy.
      */
     parameters: ParametersT;
-    
+
     /**
      * Input data series from which to compute indicators.
      */
@@ -158,13 +158,14 @@ export interface IPrepIndicatorsArgs<InputBarT extends IBar, ParametersT, IndexT
 /**
  * A function that prepares indicators for backtesting.
  */
-export type PrepIndicatorsFn<InputBarT extends IBar, IndicatorsBarT extends InputBarT, ParametersT, IndexT> = (args: IPrepIndicatorsArgs<InputBarT, ParametersT, IndexT>) => IDataFrame<IndexT, IndicatorsBarT>; 
+export type PrepIndicatorsFn<InputBarT extends IBar, IndicatorsBarT extends InputBarT, ParametersT, IndexT> = (
+    args: IPrepIndicatorsArgs<InputBarT, ParametersT, IndexT>
+) => IDataFrame<IndexT, IndicatorsBarT>;
 
 /**
  * Interface that defines a trading strategy.
  */
 export interface IStrategy<InputBarT extends IBar = IBar, IndicatorsBarT extends InputBarT = InputBarT, ParametersT = IParameterBucket, IndexT = number> {
-
     /**
      * Optimizable parameters to the strategy.
      */
@@ -202,10 +203,16 @@ export interface IStrategy<InputBarT extends IBar = IBar, IndicatorsBarT extends
      * This stop trails the current price, rising but never declining.
      */
     trailingStopLoss?: StopLossFn<InputBarT, ParametersT>;
-    
+
     /**
      * Function that computes the intrabar profit target.
      * Return the amount of profit to trigger an exit.
      */
     profitTarget?: ProfitTargetFn<InputBarT, ParametersT>;
+
+    /**
+     * Function that computes the fees
+     * Return the sum of maker fee and taker fee.
+     */
+    fees?: FeesFn;
 }
