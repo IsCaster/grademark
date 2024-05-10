@@ -61,6 +61,8 @@ export interface IPosition {
      */
     riskSeries?: ITimestampedValue[];
 
+    curRateOfReturn?: number;
+
     rateOfReturnSeries?: ITimestampedValue[];
 
     /**

@@ -7,21 +7,24 @@ import { isObject } from "./utils";
 const CBuffer = require("CBuffer");
 
 /**
- * Update an open position for a new bar.
+ * Update an open position for a new bar at the start time of this bar
  *
  * @param position The position to update.
  * @param bar The current bar.
  */
 function updatePosition(position: IPosition, bar: IBar): void {
-    position.profit = bar.close - position.entryPrice;
+    const price = bar.open;
+    const lastGrowth = position.growth;
+    position.profit = position.direction === TradeDirection.Long ? price - position.entryPrice : position.entryPrice - price;
     position.profitPct = (position.profit / position.entryPrice) * 100;
-    position.growth = position.direction === TradeDirection.Long ? bar.close / position.entryPrice : position.entryPrice / bar.close;
+    position.growth = position.direction === TradeDirection.Long ? price / position.entryPrice : (position.entryPrice * 2 - price) / position.entryPrice;
     if (position.curStopPrice !== undefined) {
-        const unitRisk = position.direction === TradeDirection.Long ? bar.close - position.curStopPrice : position.curStopPrice - bar.close;
-        position.curRiskPct = (unitRisk / bar.close) * 100;
+        const unitRisk = position.direction === TradeDirection.Long ? price - position.curStopPrice : position.curStopPrice - price;
+        position.curRiskPct = (unitRisk / price) * 100;
         position.curRMultiple = position.profit / unitRisk;
     }
     position.holdingPeriod += 1;
+    position.curRateOfReturn = position.growth / lastGrowth - 1;
 }
 
 /**
@@ -37,7 +40,17 @@ function finalizePosition(position: IPosition, exitTime: Date, exitPrice: number
     if (position.initialUnitRisk !== undefined) {
         rmultiple = profit / position.initialUnitRisk;
     }
-    const growth = position.direction === TradeDirection.Long ? exitPrice / position.entryPrice : position.entryPrice / exitPrice;
+    const lastGrowth = position.growth;
+    const growth = position.direction === TradeDirection.Long ? exitPrice / position.entryPrice : (position.entryPrice * 2 - exitPrice) / position.entryPrice;
+    position.growth = growth - growth * fees;
+    position.holdingPeriod += 1;
+    position.curRateOfReturn = position.growth / lastGrowth - 1;
+    if (position.rateOfReturnSeries instanceof Array) {
+        position.rateOfReturnSeries.push({
+            time: exitTime,
+            value: position.curRateOfReturn,
+        });
+    }
     return {
         direction: position.direction,
         entryTime: position.entryTime,
@@ -46,14 +59,14 @@ function finalizePosition(position: IPosition, exitTime: Date, exitPrice: number
         exitPrice: exitPrice,
         profit: profit,
         profitPct: (profit / position.entryPrice) * 100,
-        growth: growth - growth * fees,
+        growth: position.growth,
         riskPct: position.initialRiskPct,
         riskSeries: position.riskSeries,
         rateOfReturnSeries: position.rateOfReturnSeries,
         rmultiple: rmultiple,
         holdingPeriod: position.holdingPeriod,
         exitReason: exitReason,
-        stopPrice: position.initialStopPrice,
+        stopPrice: position.curStopPrice,
         stopPriceSeries: position.stopPriceSeries,
         profitTarget: position.profitTarget,
     };
@@ -114,6 +127,8 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
         throw new Error("You have less input data than your lookback period, the size of your input data should be some multiple of your lookback period.");
     }
 
+    const timeframe = (inputSeries.last().time.getTime() - inputSeries.first().time.getTime()) / inputSeries.count();
+
     const strategyParameters = strategy.parameters || ({} as ParametersT);
 
     let indicatorsSeries: IDataFrame<IndexT, IndicatorBarT>;
@@ -145,15 +160,13 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
     //
     let positionStatus: PositionStatus = PositionStatus.None;
 
+    let exitPrice: number | undefined;
+
+    let exitReason: string | undefined;
     //
     // Records the direction of a position/trade.
     //
     let positionDirection: TradeDirection = TradeDirection.Long;
-
-    //
-    // Records the price for conditional intrabar entry.
-    //
-    let conditionalEntryPrice: number | undefined;
 
     //
     // Tracks the currently open position, or set to null when there is no open position.
@@ -173,41 +186,79 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
 
         positionStatus = PositionStatus.Enter; // Enter position next bar.
         positionDirection = (options && options.direction) || TradeDirection.Long;
-        conditionalEntryPrice = options && options.entryPrice;
     }
 
     /**
      * User calls this function to exit a position on the instrument.
      */
-    function exitPosition() {
+    function exitPosition(price?: number, reason?: string) {
         assert(positionStatus === PositionStatus.Position, "Can only exit a position when we are in a position.");
 
         positionStatus = PositionStatus.Exit; // Exit position next bar.
+        exitPrice = price;
+        exitReason = reason;
     }
 
     //
     // Close the current open position.
     //
-    function closePosition(bar: InputBarT, exitPrice: number, exitReason: string) {
-        const trade = finalizePosition(openPosition!, bar.time, exitPrice, exitReason, fees);
+    function closePosition(bar: InputBarT, price: number, reason: string) {
+        const trade = finalizePosition(openPosition!, bar.time, price, reason, fees);
         completedTrades.push(trade!);
         // Reset to no open position;
         openPosition = null;
         positionStatus = PositionStatus.None;
+        exitPrice = undefined;
+        exitReason = undefined;
     }
 
-    let curPrice: number | null = null;
-    let lastPrice: number | null = null;
+    function exitOnCondition(bar: IndicatorBarT) {
+        assert(openPosition !== null, "Expected open position to already be initialised!");
+        if (openPosition!.curStopPrice !== undefined) {
+            if (openPosition!.direction === TradeDirection.Long) {
+                if (bar.low <= openPosition!.curStopPrice!) {
+                    // Exit intrabar due to stop loss.
+                    exitPosition(Math.min(openPosition!.curStopPrice!, bar.open), "stop-loss");
+                    return;
+                }
+            } else {
+                if (bar.high >= openPosition!.curStopPrice!) {
+                    // Exit intrabar due to stop loss.
+                    exitPosition(Math.max(openPosition!.curStopPrice!, bar.open), "stop-loss");
+                    return;
+                }
+            }
+        }
+
+        if (openPosition!.profitTarget !== undefined) {
+            if (openPosition!.direction === TradeDirection.Long) {
+                if (bar.high >= openPosition!.profitTarget!) {
+                    // Exit intrabar due to profit target.
+                    exitPosition(openPosition!.profitTarget!, "profit-target");
+                    return;
+                }
+            } else {
+                if (bar.low <= openPosition!.profitTarget!) {
+                    // Exit intrabar due to profit target.
+                    exitPosition(openPosition!.profitTarget!, "profit-target");
+                    return;
+                }
+            }
+        }
+
+        if (strategy.exitRule) {
+            strategy.exitRule(exitPosition, {
+                entryPrice: openPosition!.entryPrice,
+                position: openPosition!,
+                bar: bar,
+                lookback: new DataFrame<number, IndicatorBarT>(lookbackBuffer.data),
+                parameters: strategyParameters,
+            });
+        }
+    }
 
     for (const bar of indicatorsSeries) {
         lookbackBuffer.push(bar);
-        if (lastPrice === undefined) {
-            lastPrice = bar.open;
-            curPrice = bar.close;
-        } else {
-            lastPrice = curPrice;
-            curPrice = bar.close;
-        }
 
         if (lookbackBuffer.length < lookbackPeriod) {
             continue; // Don't invoke rules until lookback period is satisfied.
@@ -227,19 +278,6 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
             case PositionStatus.Enter:
                 assert(openPosition === null, "Expected there to be no open position initialised yet!");
 
-                if (conditionalEntryPrice !== undefined) {
-                    // Must breach conditional entry price before entering position.
-                    if (positionDirection === TradeDirection.Long) {
-                        if (bar.high < conditionalEntryPrice) {
-                            break;
-                        }
-                    } else {
-                        if (bar.low > conditionalEntryPrice) {
-                            break;
-                        }
-                    }
-                }
-
                 const entryPrice = bar.open;
 
                 openPosition = {
@@ -250,6 +288,7 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                     profit: 0,
                     profitPct: 0,
                     holdingPeriod: 0,
+                    curRateOfReturn: 0,
                 };
 
                 if (strategy.stopLoss) {
@@ -262,34 +301,6 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                     });
                     openPosition.initialStopPrice = openPosition.direction === TradeDirection.Long ? entryPrice - initialStopDistance : entryPrice + initialStopDistance;
                     openPosition.curStopPrice = openPosition.initialStopPrice;
-                }
-
-                if (strategy.trailingStopLoss) {
-                    const trailingStopDistance = strategy.trailingStopLoss({
-                        entryPrice: entryPrice,
-                        position: openPosition,
-                        bar: bar,
-                        lookback: new DataFrame<number, InputBarT>(lookbackBuffer.data),
-                        parameters: strategyParameters,
-                    });
-                    const trailingStopPrice = openPosition.direction === TradeDirection.Long ? entryPrice - trailingStopDistance : entryPrice + trailingStopDistance;
-                    if (openPosition.initialStopPrice === undefined) {
-                        openPosition.initialStopPrice = trailingStopPrice;
-                    } else {
-                        openPosition.initialStopPrice =
-                            openPosition.direction === TradeDirection.Long ? Math.max(openPosition.initialStopPrice, trailingStopPrice) : Math.min(openPosition.initialStopPrice, trailingStopPrice);
-                    }
-
-                    openPosition.curStopPrice = openPosition.initialStopPrice;
-
-                    if (options.recordStopPrice) {
-                        openPosition.stopPriceSeries = [
-                            {
-                                time: bar.time,
-                                value: openPosition.curStopPrice,
-                            },
-                        ];
-                    }
                 }
 
                 if (openPosition.curStopPrice !== undefined) {
@@ -309,12 +320,7 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                 }
 
                 if (options.recordRateOfReturn) {
-                    openPosition.rateOfReturnSeries = [
-                        {
-                            time: bar.time,
-                            value: 0,
-                        },
-                    ];
+                    openPosition.rateOfReturnSeries = [];
                 }
 
                 if (strategy.profitTarget) {
@@ -329,26 +335,58 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                 }
 
                 positionStatus = PositionStatus.Position;
+
+                // check the first bar
+                exitOnCondition(bar);
+
+                if (strategy.trailingStopLoss) {
+                    const trailingStopDistance = strategy.trailingStopLoss({
+                        entryPrice: entryPrice,
+                        position: openPosition,
+                        bar: bar,
+                        lookback: new DataFrame<number, InputBarT>(lookbackBuffer.data),
+                        parameters: strategyParameters,
+                    });
+                    const trailingStopPrice = openPosition.direction === TradeDirection.Long ? bar.close - trailingStopDistance : bar.close + trailingStopDistance;
+                    if (openPosition.initialStopPrice === undefined) {
+                        openPosition.curStopPrice = trailingStopPrice;
+                    } else {
+                        openPosition.initialStopPrice =
+                            openPosition.direction === TradeDirection.Long ? Math.max(openPosition.initialStopPrice, trailingStopPrice) : Math.min(openPosition.initialStopPrice, trailingStopPrice);
+                        openPosition.curStopPrice = openPosition.initialStopPrice;
+                    }
+
+                    if (options.recordStopPrice) {
+                        openPosition.stopPriceSeries = [
+                            {
+                                time: bar.time,
+                                value: openPosition.curStopPrice,
+                            },
+                        ];
+                    }
+                }
                 break;
 
             case PositionStatus.Position:
                 assert(openPosition !== null, "Expected open position to already be initialised!");
 
-                if (openPosition!.curStopPrice !== undefined) {
-                    if (openPosition!.direction === TradeDirection.Long) {
-                        if (bar.low <= openPosition!.curStopPrice!) {
-                            // Exit intrabar due to stop loss.
-                            closePosition(bar, openPosition!.curStopPrice!, "stop-loss");
-                            break;
-                        }
-                    } else {
-                        if (bar.high >= openPosition!.curStopPrice!) {
-                            // Exit intrabar due to stop loss.
-                            closePosition(bar, openPosition!.curStopPrice!, "stop-loss");
-                            break;
-                        }
-                    }
+                updatePosition(openPosition!, bar);
+                if (openPosition!.curRiskPct !== undefined && options.recordRisk) {
+                    // This risk pecent is calculated at the start time of current bar
+                    openPosition!.riskSeries!.push({
+                        time: bar.time,
+                        value: openPosition!.curRiskPct!,
+                    });
                 }
+
+                if (options.recordRateOfReturn) {
+                    openPosition!.rateOfReturnSeries!.push({
+                        time: bar.time,
+                        value: openPosition!.curRateOfReturn!,
+                    });
+                }
+
+                exitOnCondition(bar);
 
                 if (strategy.trailingStopLoss !== undefined) {
                     //
@@ -364,17 +402,14 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
 
                     if (openPosition!.direction === TradeDirection.Long) {
                         const newTrailingStopPrice = bar.close - trailingStopDistance;
-                        if (newTrailingStopPrice > openPosition!.curStopPrice!) {
-                            openPosition!.curStopPrice = newTrailingStopPrice;
-                        }
+                        openPosition!.curStopPrice = openPosition!.initialStopPrice ? Math.max(openPosition!.initialStopPrice!, newTrailingStopPrice) : newTrailingStopPrice;
                     } else {
                         const newTrailingStopPrice = bar.close + trailingStopDistance;
-                        if (newTrailingStopPrice < openPosition!.curStopPrice!) {
-                            openPosition!.curStopPrice = newTrailingStopPrice;
-                        }
+                        openPosition!.curStopPrice = openPosition!.initialStopPrice ? Math.min(openPosition!.initialStopPrice!, newTrailingStopPrice) : newTrailingStopPrice;
                     }
 
                     if (options.recordStopPrice) {
+                        // This stop price is used for next bar
                         openPosition!.stopPriceSeries!.push({
                             time: bar.time,
                             value: openPosition!.curStopPrice!,
@@ -382,61 +417,12 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                     }
                 }
 
-                if (openPosition!.profitTarget !== undefined) {
-                    if (openPosition!.direction === TradeDirection.Long) {
-                        if (bar.high >= openPosition!.profitTarget!) {
-                            // Exit intrabar due to profit target.
-                            closePosition(bar, openPosition!.profitTarget!, "profit-target");
-                            break;
-                        }
-                    } else {
-                        if (bar.low <= openPosition!.profitTarget!) {
-                            // Exit intrabar due to profit target.
-                            closePosition(bar, openPosition!.profitTarget!, "profit-target");
-                            break;
-                        }
-                    }
-                }
-
-                updatePosition(openPosition!, bar);
-
-                if (openPosition!.curRiskPct !== undefined && options.recordRisk) {
-                    openPosition!.riskSeries!.push({
-                        time: bar.time,
-                        value: openPosition!.curRiskPct!,
-                    });
-                }
-
-                if (options.recordRateOfReturn && lastPrice) {
-                    if (openPosition!.direction === TradeDirection.Long) {
-                        openPosition!.rateOfReturnSeries!.push({
-                            time: bar.time,
-                            value: (curPrice - lastPrice) / lastPrice,
-                        });
-                    } else {
-                        openPosition!.rateOfReturnSeries!.push({
-                            time: bar.time,
-                            value: (lastPrice - curPrice) / lastPrice,
-                        });
-                    }
-                }
-
-                if (strategy.exitRule) {
-                    strategy.exitRule(exitPosition, {
-                        entryPrice: openPosition!.entryPrice,
-                        position: openPosition!,
-                        bar: bar,
-                        lookback: new DataFrame<number, IndicatorBarT>(lookbackBuffer.data),
-                        parameters: strategyParameters,
-                    });
-                }
-
                 break;
 
             case PositionStatus.Exit:
                 assert(openPosition !== null, "Expected open position to already be initialised!");
 
-                closePosition(bar, bar.open, "exit-rule");
+                closePosition(bar, exitPrice ?? bar.open, exitReason ?? "exit-rule");
                 break;
 
             default:
@@ -447,7 +433,7 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
     if (openPosition) {
         // Finalize open position.
         const lastBar = indicatorsSeries.last();
-        const lastTrade = finalizePosition(openPosition, lastBar.time, lastBar.close, "finalize", fees);
+        const lastTrade = finalizePosition(openPosition, new Date(lastBar.time.getTime() + timeframe), lastBar.close, "finalize", fees);
         completedTrades.push(lastTrade);
     }
 

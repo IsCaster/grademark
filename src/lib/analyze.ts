@@ -4,6 +4,9 @@ import { IAnalysis } from "./analysis";
 import { isNumber, isArray } from "./utils";
 import { Series } from "data-forge";
 import _ from "lodash";
+import fs from "fs";
+import dayjs from "dayjs";
+
 /**
  * Analyse a sequence of trades and compute their performance.
  */
@@ -16,7 +19,6 @@ export function analyze(startingCapital: number, trades: ITrade[], options?: { s
         throw new Error("Expected 'trades' argument to 'analyze' to be an array that contains a set of trades to be analyzed.");
     }
 
-    let orderSize = options?.orderSize ?? startingCapital;
     let workingCapital = startingCapital;
     let barCount = 0;
     let peakCapital = startingCapital;
@@ -33,8 +35,8 @@ export function analyze(startingCapital: number, trades: ITrade[], options?: { s
     let timeframe = 0;
     let rateOfReturnList: number[] | null = null;
 
-    if (trades?.[0]?.rateOfReturnSeries?.[0]?.time && trades?.[0]?.rateOfReturnSeries?.[1]?.time) {
-        timeframe = trades[0].rateOfReturnSeries[1].time.getTime() - trades[0].rateOfReturnSeries[0].time.getTime();
+    if (trades?.[0]?.rateOfReturnSeries) {
+        timeframe = (trades[0].exitTime.getTime() - trades[0].entryTime.getTime()) / trades[0].rateOfReturnSeries.length;
     }
 
     if (timeframe && options?.startingDate) {
@@ -53,11 +55,11 @@ export function analyze(startingCapital: number, trades: ITrade[], options?: { s
 
         if (rateOfReturnList) {
             for (const rateOfReturn of trade.rateOfReturnSeries!) {
-                rateOfReturnList[Math.round((rateOfReturn.time.getTime() - options!.startingDate!.getTime()) / timeframe)] = rateOfReturn.value * (orderSize / workingCapital);
+                rateOfReturnList[Math.round((rateOfReturn.time.getTime() - options!.startingDate!.getTime()) / timeframe)] = rateOfReturn.value;
             }
         }
 
-        workingCapital = workingCapital + orderSize * (trade.growth - 1);
+        workingCapital = workingCapital * trade.growth;
         barCount += trade.holdingPeriod;
 
         if (workingCapital < peakCapital) {
@@ -107,6 +109,10 @@ export function analyze(startingCapital: number, trades: ITrade[], options?: { s
     const averageLosingTrade = numLosingTrades > 0 ? totalLosses / numLosingTrades : 0;
     if (rateOfReturnList) {
         const rateOfReturnSeries = new Series(rateOfReturnList);
+        // console.log(
+        //     `Calculate rate of return list, rateOfReturnSeries.average() = ${rateOfReturnSeries.average()} rateOfReturnSeries.std()=${rateOfReturnSeries.std()}, length=${rateOfReturnSeries.count()}`
+        // );
+        // fs.writeFileSync("a.txt", _.map(rateOfReturnList, (v, index) => `${dayjs(options!.startingDate!.getTime() + index * timeframe).format("YYYY/MM/DD HH:mm")},${v}`).join("\n"));
         sharpeRatio = (rateOfReturnSeries.average() / rateOfReturnSeries.std()) * Math.sqrt((365 * 24 * 60 * 60 * 1000) / timeframe);
     }
     const analysis: IAnalysis = {
