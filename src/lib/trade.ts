@@ -101,4 +101,6 @@ export interface ITrade {
      * Price where profit target exit is triggered.
      */
     profitTarget?: number;
+
+    runUp?: number;
 }

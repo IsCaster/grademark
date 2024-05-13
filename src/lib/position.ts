@@ -89,4 +89,6 @@ export interface IPosition {
      * Profit target where exit is triggered (intrabar).
      */
     profitTarget?: number;
+
+    runUp?: number;
 }

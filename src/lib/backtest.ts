@@ -69,6 +69,7 @@ function finalizePosition(position: IPosition, exitTime: Date, exitPrice: number
         stopPrice: position.curStopPrice,
         stopPriceSeries: position.stopPriceSeries,
         profitTarget: position.profitTarget,
+        runUp: position.runUp,
     };
 }
 
@@ -289,6 +290,7 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                     profitPct: 0,
                     holdingPeriod: 0,
                     curRateOfReturn: 0,
+                    runUp: 0,
                 };
 
                 if (strategy.stopLoss) {
@@ -365,6 +367,12 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                         ];
                     }
                 }
+
+                if (openPosition.direction === TradeDirection.Long) {
+                    openPosition!.runUp = bar.high - openPosition!.entryPrice > openPosition!.runUp! ? bar.high - openPosition!.entryPrice : openPosition!.runUp;
+                } else {
+                    openPosition!.runUp = openPosition!.entryPrice - bar.low > openPosition!.runUp! ? openPosition!.entryPrice - bar.low : openPosition!.runUp;
+                }
                 break;
 
             case PositionStatus.Position:
@@ -416,7 +424,11 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                         });
                     }
                 }
-
+                if (openPosition!.direction === TradeDirection.Long) {
+                    openPosition!.runUp = bar.high - openPosition!.entryPrice > openPosition!.runUp! ? bar.high - openPosition!.entryPrice : openPosition!.runUp;
+                } else {
+                    openPosition!.runUp = openPosition!.entryPrice - bar.low > openPosition!.runUp! ? openPosition!.entryPrice - bar.low : openPosition!.runUp;
+                }
                 break;
 
             case PositionStatus.Exit:
