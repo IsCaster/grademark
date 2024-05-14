@@ -128,7 +128,7 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
         throw new Error("You have less input data than your lookback period, the size of your input data should be some multiple of your lookback period.");
     }
 
-    const timeframe = (inputSeries.last().time.getTime() - inputSeries.first().time.getTime()) / inputSeries.count();
+    const timeframe = Math.round((inputSeries.last().time.getTime() - inputSeries.first().time.getTime()) / inputSeries.count());
 
     const strategyParameters = strategy.parameters || ({} as ParametersT);
 

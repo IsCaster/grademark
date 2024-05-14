@@ -10,7 +10,7 @@ import dayjs from "dayjs";
 /**
  * Analyse a sequence of trades and compute their performance.
  */
-export function analyze(startingCapital: number, trades: ITrade[], options?: { startingDate?: Date; endingDate?: Date; orderSize?: number }): IAnalysis {
+export function analyze(startingCapital: number, trades: ITrade[], options?: { startingDate?: Date; endingDate?: Date; timeframe?: number }): IAnalysis {
     if (!isNumber(startingCapital) || startingCapital <= 0) {
         throw new Error("Expected 'startingCapital' argument to 'analyze' to be a positive number that specifies the amount of capital used to simulate trading.");
     }
@@ -32,10 +32,10 @@ export function analyze(startingCapital: number, trades: ITrade[], options?: { s
     let totalTrades = 0;
     let maxRiskPct = undefined;
     let sharpeRatio = 0;
-    let timeframe = 0;
+    let timeframe = options?.timeframe ?? 0;
     let rateOfReturnList: number[] | null = null;
 
-    if (trades?.[0]?.rateOfReturnSeries) {
+    if (!timeframe && trades?.[0]?.rateOfReturnSeries) {
         timeframe = (trades[0].exitTime.getTime() - trades[0].entryTime.getTime()) / trades[0].rateOfReturnSeries.length;
     }
 
