@@ -91,4 +91,8 @@ export interface IPosition {
     profitTarget?: number;
 
     runUp?: number;
+
+    drawdown?: number;
+
+    maxDrawdown?: number;
 }

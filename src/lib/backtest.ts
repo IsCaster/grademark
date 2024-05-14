@@ -70,6 +70,11 @@ function finalizePosition(position: IPosition, exitTime: Date, exitPrice: number
         stopPriceSeries: position.stopPriceSeries,
         profitTarget: position.profitTarget,
         runUp: position.runUp,
+        runUpPct: ((position.runUp ?? 0) / position.entryPrice) * 100,
+        drawdown: position.drawdown,
+        drawdownPct: ((position.drawdown ?? 0) / (position.entryPrice + (position.runUp ?? 0))) * 100,
+        maxDrawdown: position.maxDrawdown,
+        maxDrawdownPct: ((position.maxDrawdown ?? 0) / (position.entryPrice + (position.runUp ?? 0))) * 100,
     };
 }
 
@@ -291,6 +296,8 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                     holdingPeriod: 0,
                     curRateOfReturn: 0,
                     runUp: 0,
+                    drawdown: 0,
+                    maxDrawdown: 0,
                 };
 
                 if (strategy.stopLoss) {
@@ -369,9 +376,19 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                 }
 
                 if (openPosition.direction === TradeDirection.Long) {
-                    openPosition!.runUp = bar.high - openPosition!.entryPrice > openPosition!.runUp! ? bar.high - openPosition!.entryPrice : openPosition!.runUp;
+                    openPosition.runUp = bar.high - openPosition.entryPrice > openPosition.runUp! ? bar.high - openPosition.entryPrice : openPosition.runUp;
+                    openPosition.drawdown = openPosition.entryPrice + openPosition.runUp! - bar.close;
+                    let maxDrawdown = openPosition.entryPrice + openPosition.runUp! - bar.low;
+                    if (maxDrawdown > openPosition.maxDrawdown!) {
+                        openPosition.maxDrawdown = maxDrawdown;
+                    }
                 } else {
-                    openPosition!.runUp = openPosition!.entryPrice - bar.low > openPosition!.runUp! ? openPosition!.entryPrice - bar.low : openPosition!.runUp;
+                    openPosition.runUp = openPosition.entryPrice - bar.low > openPosition.runUp! ? openPosition.entryPrice - bar.low : openPosition.runUp;
+                    openPosition.drawdown = bar.close - openPosition.entryPrice + openPosition.runUp!;
+                    let maxDrawdown = bar.high - openPosition.entryPrice + openPosition.runUp!;
+                    if (maxDrawdown > openPosition.maxDrawdown!) {
+                        openPosition.maxDrawdown = maxDrawdown;
+                    }
                 }
                 break;
 
@@ -424,11 +441,24 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                         });
                     }
                 }
-                if (openPosition!.direction === TradeDirection.Long) {
-                    openPosition!.runUp = bar.high - openPosition!.entryPrice > openPosition!.runUp! ? bar.high - openPosition!.entryPrice : openPosition!.runUp;
-                } else {
-                    openPosition!.runUp = openPosition!.entryPrice - bar.low > openPosition!.runUp! ? openPosition!.entryPrice - bar.low : openPosition!.runUp;
+                if (openPosition) {
+                    if (openPosition.direction === TradeDirection.Long) {
+                        openPosition.runUp = bar.high - openPosition.entryPrice > openPosition.runUp! ? bar.high - openPosition.entryPrice : openPosition.runUp;
+                        openPosition.drawdown = openPosition.entryPrice + openPosition.runUp! - bar.close;
+                        let maxDrawdown = openPosition.entryPrice + openPosition.runUp! - bar.low;
+                        if (maxDrawdown > openPosition.maxDrawdown!) {
+                            openPosition.maxDrawdown = maxDrawdown;
+                        }
+                    } else {
+                        openPosition.runUp = openPosition.entryPrice - bar.low > openPosition.runUp! ? openPosition.entryPrice - bar.low : openPosition.runUp;
+                        openPosition.drawdown = bar.close - openPosition.entryPrice + openPosition.runUp!;
+                        let maxDrawdown = bar.high - openPosition.entryPrice + openPosition.runUp!;
+                        if (maxDrawdown > openPosition.maxDrawdown!) {
+                            openPosition.maxDrawdown = maxDrawdown;
+                        }
+                    }
                 }
+
                 break;
 
             case PositionStatus.Exit:

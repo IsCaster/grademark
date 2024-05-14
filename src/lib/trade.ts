@@ -103,4 +103,14 @@ export interface ITrade {
     profitTarget?: number;
 
     runUp?: number;
+
+    runUpPct?: number;
+
+    drawdown?: number;
+
+    drawdownPct?: number;
+
+    maxDrawdown?: number;
+
+    maxDrawdownPct?: number;
 }
