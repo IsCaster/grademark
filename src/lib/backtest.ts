@@ -340,7 +340,8 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                         lookback: new DataFrame<number, InputBarT>(lookbackBuffer.data),
                         parameters: strategyParameters,
                     });
-                    openPosition.profitTarget = openPosition.direction === TradeDirection.Long ? entryPrice + profitDistance : entryPrice - profitDistance;
+                    openPosition.initialProfitTarget = openPosition.direction === TradeDirection.Long ? entryPrice + profitDistance : entryPrice - profitDistance;
+                    openPosition.profitTarget = openPosition.initialProfitTarget;
                 }
 
                 positionStatus = PositionStatus.Position;
@@ -375,6 +376,25 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                     }
                 }
 
+                if (strategy.trailingProfitTarget) {
+                    const trailingProfitTargetDistance = strategy.trailingProfitTarget({
+                        entryPrice: entryPrice,
+                        position: openPosition,
+                        bar: bar,
+                        lookback: new DataFrame<number, InputBarT>(lookbackBuffer.data),
+                        parameters: strategyParameters,
+                    });
+                    const trailingProfitTargetPrice = openPosition.direction === TradeDirection.Long ? bar.close + trailingProfitTargetDistance : bar.close - trailingProfitTargetDistance;
+                    if (openPosition.initialProfitTarget === undefined) {
+                        openPosition.profitTarget = trailingProfitTargetPrice;
+                    } else {
+                        openPosition.profitTarget =
+                            openPosition.direction === TradeDirection.Long
+                                ? Math.min(openPosition.initialProfitTarget, trailingProfitTargetPrice)
+                                : Math.max(openPosition.initialProfitTarget, trailingProfitTargetPrice);
+                    }
+                }
+
                 if (openPosition.direction === TradeDirection.Long) {
                     openPosition.runUp = bar.high - openPosition.entryPrice > openPosition.runUp! ? bar.high - openPosition.entryPrice : openPosition.runUp;
                     openPosition.drawdown = openPosition.entryPrice + openPosition.runUp! - bar.close;
@@ -390,6 +410,7 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                         openPosition.maxDrawdown = maxDrawdown;
                     }
                 }
+
                 break;
 
             case PositionStatus.Position:
@@ -426,11 +447,11 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                     });
 
                     if (openPosition!.direction === TradeDirection.Long) {
-                        const newTrailingStopPrice = bar.close - trailingStopDistance;
-                        openPosition!.curStopPrice = openPosition!.initialStopPrice ? Math.max(openPosition!.initialStopPrice!, newTrailingStopPrice) : newTrailingStopPrice;
+                        const trailingStopPrice = bar.close - trailingStopDistance;
+                        openPosition!.curStopPrice = openPosition!.initialStopPrice ? Math.max(openPosition!.initialStopPrice!, trailingStopPrice) : trailingStopPrice;
                     } else {
-                        const newTrailingStopPrice = bar.close + trailingStopDistance;
-                        openPosition!.curStopPrice = openPosition!.initialStopPrice ? Math.min(openPosition!.initialStopPrice!, newTrailingStopPrice) : newTrailingStopPrice;
+                        const trailingStopPrice = bar.close + trailingStopDistance;
+                        openPosition!.curStopPrice = openPosition!.initialStopPrice ? Math.min(openPosition!.initialStopPrice!, trailingStopPrice) : trailingStopPrice;
                     }
 
                     if (options.recordStopPrice) {
@@ -441,6 +462,26 @@ export function backtest<InputBarT extends IBar, IndicatorBarT extends InputBarT
                         });
                     }
                 }
+
+                if (strategy.trailingProfitTarget) {
+                    const trailingProfitTargetDistance = strategy.trailingProfitTarget({
+                        entryPrice: openPosition!.entryPrice,
+                        position: openPosition!,
+                        bar: bar,
+                        lookback: new DataFrame<number, InputBarT>(lookbackBuffer.data),
+                        parameters: strategyParameters,
+                    });
+                    const trailingProfitTargetPrice = openPosition!.direction === TradeDirection.Long ? bar.close + trailingProfitTargetDistance : bar.close - trailingProfitTargetDistance;
+                    if (openPosition!.initialProfitTarget === undefined) {
+                        openPosition!.profitTarget = trailingProfitTargetPrice;
+                    } else {
+                        openPosition!.profitTarget =
+                            openPosition!.direction === TradeDirection.Long
+                                ? Math.min(openPosition!.initialProfitTarget, trailingProfitTargetPrice)
+                                : Math.max(openPosition!.initialProfitTarget, trailingProfitTargetPrice);
+                    }
+                }
+
                 if (openPosition) {
                     if (openPosition.direction === TradeDirection.Long) {
                         openPosition.runUp = bar.high - openPosition.entryPrice > openPosition.runUp! ? bar.high - openPosition.entryPrice : openPosition.runUp;

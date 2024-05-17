@@ -85,6 +85,8 @@ export interface IPosition {
      */
     stopPriceSeries?: ITimestampedValue[];
 
+    initialProfitTarget?: number;
+
     /*
      * Profit target where exit is triggered (intrabar).
      */
